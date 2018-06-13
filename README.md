@@ -7,7 +7,8 @@ project](https://github.com/luizluca/bridge) on github.
 This fork adds the necessary stuff to build a docker image for it. The
 application is not modified in any way. The docker container supports the
 client side as well as the server side, since thankfully both differ only in
-the parameters passed to the application.
+the parameters passed to the application. A prebuilt docker image is
+available from [docker hub](https://hub.docker.com/r/andrel76/http-bridge/).
 
 ## Server side
 
@@ -36,8 +37,8 @@ services:
             - "80:80"
 ```
 
-If for some reason you want to change the port or directory the server listens
-to internally, add sth. like the following to the service's section:
+If for some reason you want to change the port or directory the server
+listens to internally, add sth. like the following to the service's section:
 
 ```
        command: 8080 /bridge # first is the server port, second the directory
@@ -63,7 +64,7 @@ services:
 
 ## Client side
 
-The main use case of bridge is tunneling ssh out, so here is a sample *~.ssh/config*
+The main use case of *bridge* for me is tunneling ssh out, so here is a sample *~.ssh/config*
 file for your client behind the firewall that uses the *bridge* container:
 
 ```
