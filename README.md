@@ -1,69 +1,82 @@
-# bridge
+# bridge docker container
 
-brigde is a dynamic port forwarder over HTTP (with HTTP PROXY support)
+*brigde* is a dynamic port forwarder over HTTP (with HTTP PROXY support). For
+more information on how this works see the [original
+project](https://github.com/luizluca/bridge) on github.
 
-In some places, network is locked behind a firewall and Internet connection is available only by using a proxy server. If you wishes to connect to your SSH at home, you're in trouble. However, there is a simple solution to this: [tunneling over HTTPS](http://www.google.com.br/search?q=ssh+over+http+proxy). However, if you are one of those lucky guys that cannot use tunneling over HTTPS, this page can help you.
+This fork adds the necessary stuff to build a docker image for it. The
+application is not modified in any way. The docker container supports the
+client side as well as the server side, since thankfully both differ only in
+the parameters passed to the application.
 
-Using any protocol that can exchange information, it is possible to encapsulate a connection over it. Some not-so-common examples are: [IP-over-DNS](http://thomer.com/howtos/nstx.html), [IP-over-ICMP](http://thomer.com/icmptx/). This page shows a TCP tunneling solution (like ssh -L option) (ab)using HTTP.
+## Server side
 
-The program is divided in two parts: the first one implements a HTTP server, that can be setup to run on any server. However, it is generally easier to have ports 80 or 8080 as authorized ports in your proxy server.
-The seconds part is the client program. It opens a local TCP port or reads STDIN. After a connection is received, it connects to the server program just like a browser would do and exchange packages using HTTP requests (in this case: GET, PUT, POST, DELETE). 
-How to run
+Since *bridge* is a tunnel through http, it is also possible to run the server
+side as a virtual host in the context of a reverse proxy, e.g. Jason Wilder's
+[nginx-proxy](https://hub.docker.com/r/jwilder/nginx-proxy/). This allows using
+a computer as tunnel endpoint that is also serving web pages on port 80. The
+*bridge* application has no inbuilt support for SSL, so to get a secure
+connection you basically have two choices:
 
-Download bridge file (attachments bellow this page). It is a ruby script that implements both server and client. It depends on webrick and net:http that are also ruby on rails dependencies. Run it as any other ruby script. Server is activated when two parameters are passed: local server port and relative URL
+1. tunnel an otherwise secure protocol like ssh or
+2. use the aforementioned nginx-proxy to handle the SSL part and let it talk
+   non-encrypted http with *bridge* running inside the container. See the
+   nginx-proxy documentation on how to do this (hint: environment HTTPS\_METHOD).
+
+A very basic *docker-compose.yml* file for running the server side as standalone
+service on *http://yourhost.yourdomain.tld:80/bridge* looks like this:
 
 ```
-bridge$ ruby bridge 8080 /bridge
+version: '2'
+
+services:
+    http-bridge:
+        image: http-bridge
+        ports:
+            - "80:80"
 ```
 
-This brings up Webrick running in port 8080 and answering bridge requests at http://myserver:8080/bridge
-Now, it is time to run the client program:
+If for some reason you want to change the port or directory the server listens
+to internally, add sth. like the following to the service's section:
 
 ```
-client$ ruby bridge 8022 http://myserver:8080/bridge mysshserver.xxx.com 22
+       command: 8080 /bridge # first is the server port, second the directory
+       expose:
+           - "8080"          # by default, only port 80 is exposed
+       ports:
+           - "8080:8080"
 ```
 
-If everything goes OK, the client program starts to listen on port 8022 (user "-" intead of 8022 for STDIN/STDOUT). When someone connects to it, it translates the communication with HTTP commands and forwards them to myserver that effectively connects to mysshserver.xxx.com at port 22. As 22 is a ssh port, one can use this tunneling using:
+A *docker-compose.yml* file for use with the nginx-proxy might look like this:
 
 ```
-client$ ssh localhost -p 8022
+version: '2'
+
+services:
+    http-bridge:
+        image: http-bridge
+        network_mode: "bridge" # I put the nginx-proxy and it's backends on this network
+        environment:
+            - HTTPS_METHOD=noredirect
+            - VIRTUAL_HOST=yourvirtualhost.yourdomain.tld
+```
+
+## Client side
+
+The main use case of bridge is tunneling ssh out, so here is a sample *~.ssh/config*
+file for your client behind the firewall that uses the *bridge* container:
+
+```
+host yourhost
+    HostName yourvirtualhost.yourdomain.tld
+    ProxyCommand docker run -i http-bridge - http://%h/bridge %h 22
+```
+
+Now call ssh as usual:
+
+```
+client$ ssh yourhost
 Password:
 
-mysshserver $
-```
-
-Now, someone might like to use SSH to setup a SOCKS server, a reverse TCP port, etc or just connect to a remote VPN server.
-
-This command can also be used as ProxyCommand in OpenSSH client. In this casem the use of bridge is more "transparent".
-
-```
-~/.ssh/config
-Host *.xxx.com
-    ProxyCommand bridge - http://myserver:8080/bridge %h %p
-Host mysshserver2
-    ProxyCommand bridge - http://myserver:8080/bridge mysshserver2.noip.org 8022
-```
-
-And call ssh as usual. For any xxx.com server:
-
-```
-client$ ssh mysshserver.xxx.com
-Password:
-
-mysshserver $
-```
-
-And for server2:
-
-```
-client$ ssh mysshserver2
-Password:
-
-mysshserver2 $
-```
-
-If you need that client connect to bridge over a HTTP Proxy, you can set the standard environment vars like http_proxy.
-
-```
-client$ http_proxy=http://myuser:pass@myproxy:3128 ruby bridge 8022 http://myserver:8080/bridge mysshserver.xxx.com 22
+yourhost $
 ```
